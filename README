@@ -1,0 +1,9 @@
+Usage:
+linode-dyndns -k [api_key] -d [domain_id] -r [resource_id]
+
+You can get the domain and resource ids from Linode's edit page for
+the DNS entry you want to modify. They're found in the URL for that
+page.
+
+By default, this sets the resource's IP address to your public facing
+address. You can override that behavior with the --address option.
