@@ -1,0 +1,109 @@
+#!/usr/bin/env python
+
+import cookielib
+import re
+import sys
+import urllib
+import urllib2
+
+from optparse import OptionParser
+from xml.dom.minidom import parseString
+
+def get_parser():
+    parser = OptionParser()
+    parser.add_option("-a", "--address")
+    parser.add_option("-d", "--domain-id")
+    parser.add_option("-k", "--api-key")
+    parser.add_option("-r", "--resource-id")
+    return parser
+
+def parse_wddx_node(node):
+    wddxTypes = {
+        "array" : parse_wddx_array,
+        "number" : parse_wddx_number,
+        "string" : parse_wddx_string,
+        "struct" : parse_wddx_struct,
+        }
+
+    type = node.nodeName
+
+    if wddxTypes.has_key(type):
+        return wddxTypes[type](node)
+
+def parse_wddx_array(node):
+    return [ parse_wddx_node(child) for child in node.childNodes ]
+
+def parse_wddx_number(node):
+    val = node.firstChild.nodeValue
+
+    if "." in val:
+        return float(val)
+    else:
+        return int(val)
+
+def parse_wddx_string(node):
+    if not node.hasChildNodes():
+        return ""
+    return node.firstChild.nodeValue
+
+def parse_wddx_struct(node):
+    ret = {}
+
+    for child in node.childNodes:
+        name = child.getAttribute("name")
+        ret[name] = parse_wddx_node(child.firstChild)
+
+    return ret
+
+def api_call(options, action, args=None):
+    base = "https://api.linode.com/api/"
+
+    query_args = {"api_action" : action,
+                  "api_key" : options.api_key,
+                  "api_responseFormat" : "wddx" }
+    if args is not None:
+        query_args.update(args)
+
+    url = "%s?%s" % (base, urllib.urlencode(query_args))
+
+    response = urllib2.urlopen(url)
+
+    xml = response.read()
+    dom = parseString(xml)
+
+    data_elt = dom.getElementsByTagName("data")[0]
+    data = parse_wddx_struct(data_elt.firstChild)
+
+    errors = data.get("ERRORARRAY")
+    if errors and len(errors) > 0:
+        error = errors[0]
+        raise Exception(error.get("ERRORMESSAGE"), error.get("ERRORCODE"))
+
+    return data.get("DATA")
+    
+def getmyip():
+    url = "http://www.whatismyip.com/automation/n09230945.asp"
+    response = urllib2.urlopen(url)
+    return response.read().strip()
+
+def main():
+    (options, args) = get_parser().parse_args()
+
+    address = options.address
+    if not address:
+        address = "[remote_addr]"
+
+    api_call(options, "domain.resource.list",
+             { "DomainID" : options.domain_id,
+               "ResourceID" : options.resource_id })
+
+    api_call(options, "domain.resource.update",
+             { "DomainID" : options.domain_id,
+               "ResourceID" : options.resource_id,
+               "Target" : address })
+
+if __name__ == "__main__":
+    try:
+        exit(main())
+    except KeyboardInterrupt:
+        exit(1)
